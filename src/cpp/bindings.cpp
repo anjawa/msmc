@@ -2,6 +2,7 @@
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/map.h>
+#include <nanobind/stl/vector.h>
 #include <map>
 #include <stdexcept>
 
@@ -35,7 +36,8 @@ NB_MODULE(_core, m) {
 
     nb::class_<Model>(m, "Model")
         .def(nb::init<std::shared_ptr<PairPotential>, std::map<int, double>>(),
-             "potential"_a, "virial"_a);
+             "potential"_a, "virial"_a)
+        .def_ro("virial", &Model::virial);
 
     nb::class_<MetropolisHasting>(m, "MetropolisHasting")
         .def(nb::init<Model, Model>(), "target_model"_a, "ref_model"_a)

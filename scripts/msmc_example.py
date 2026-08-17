@@ -39,16 +39,16 @@ if __name__ == "__main__":
 
     msmc = MetropolisHasting(target_model=target, ref_model=ref)
 
-    b2 = msmc.sample_virial(
-        virial_no=2, num_samples=int(1e6), proposal_sigma=1.0, seed=42
+    b2, b2_err = msmc.sample_virial_overlap(
+        virial_no=2, num_samples=int(1e6), warmup=20000, seed=42
     )
-    b3 = msmc.sample_virial(
-        virial_no=3, num_samples=int(1e6), proposal_sigma=1.0, seed=42
+    b3, b3_err = msmc.sample_virial_overlap(
+        virial_no=3, num_samples=int(1e6), warmup=20000, seed=42
     )
-    b4 = msmc.sample_virial(
-        virial_no=4, num_samples=int(1e6), proposal_sigma=1.0, seed=42
+    b4, b4_err = msmc.sample_virial_overlap(
+        virial_no=4, num_samples=int(1e7), warmup=20000, seed=42
     )
 
-    print("B2 = {}; B2/b = {}".format(b2, b2 / b))
-    print("B3 = {}; B3/b^2 = {}".format(b3, b3 / b**2))
-    print("B4 = {}; B4/b^3 = {}".format(b4, b4 / b**3))
+    print("B2 = {:.4f} +- {:.4f}; B2/b = {:.4f} +- {:.4f}".format(b2, b2_err, b2 / b, b2_err / b))
+    print("B3 = {:.4f} +- {:.4f}; B3/b^2 = {:.4f} +- {:.4f}".format(b3, b3_err, b3 / b**2, b3_err / b**2))
+    print("B4 = {:.4f} +- {:.4f}; B4/b^3 = {:.4f} +- {:.4f}".format(b4, b4_err, b4 / b**3, b4_err / b**3))
