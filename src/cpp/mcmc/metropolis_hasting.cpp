@@ -12,9 +12,11 @@ namespace {
 // gamma_other is kept up to date for the overlap function
 class OverlapChain {
 public:
-    OverlapChain(const PairPotential* own, const PairPotential* other, int virial_no, int seed)
+    OverlapChain(const PairPotential* own, const PairPotential* other, int virial_no, int seed,
+                 int tune_interval)
         : own_(own), other_(other), virial_no_(virial_no),
-          n_dof_((virial_no - 1) * 3), rng_(seed), pos_(n_dof_), pos_trial_(n_dof_) {
+          n_dof_((virial_no - 1) * 3), rng_(seed), pos_(n_dof_), pos_trial_(n_dof_),
+          tune_interval_(tune_interval) {
         // Chain begins inside the integrand's support; redraw if gamma == 0.
         for (int attempt = 0; attempt < 1000; attempt++) {
             for (int i = 0; i < n_dof_; i++) {
@@ -29,7 +31,8 @@ public:
         gamma_other_ = other_->compute_integrand(pos_.data(), virial_no_);
     }
 
-    void step() {
+    // tune=true only during warmup. Afterwards the step size is frozen
+    void step(bool tune = false) {
         for (int i = 0; i < n_dof_; i++) {
             pos_trial_[i] = pos_[i] + step_sigma_ * normal_(rng_);
         }
@@ -39,6 +42,19 @@ public:
             pos_.swap(pos_trial_);
             gamma_own_ = gamma_new;
             gamma_other_ = other_->compute_integrand(pos_.data(), virial_no_);
+            n_accepted_++;
+        }
+        n_proposed_++;
+        if (tune && n_proposed_ == tune_interval_) {
+            // Target 30-40 % acceptance.
+            double rate = static_cast<double>(n_accepted_) / n_proposed_;
+            if (rate < 0.30) {
+                step_sigma_ /= 1.15;
+            } else if (rate > 0.40) {
+                step_sigma_ *= 1.15;
+            }
+            n_proposed_ = 0;
+            n_accepted_ = 0;
         }
     }
 
@@ -58,6 +74,9 @@ private:
     double gamma_own_ = 0.0;
     double gamma_other_ = 0.0;
     double step_sigma_ = 1.0;
+    int n_proposed_ = 0;
+    int n_accepted_ = 0;
+    int tune_interval_;
 };
 
 // Sample means of one measurement run over both chains.
@@ -164,12 +183,17 @@ double MetropolisHasting::sample_virial(int virial_no, int num_samples, int warm
 
 double MetropolisHasting::sample_virial_overlap(int virial_no, int num_samples, int warmup, int seed) {
 
-    OverlapChain chain_t(target_model_.potential.get(), ref_model_.potential.get(), virial_no, seed);
-    OverlapChain chain_r(ref_model_.potential.get(), target_model_.potential.get(), virial_no, seed + 1);
+    // Aim for approx. 100 tuning windows during warmup (min 50, max 200 proposals per window).
+    int tune_interval = std::clamp(warmup / 100, 50, 200);
+
+    OverlapChain chain_t(target_model_.potential.get(), ref_model_.potential.get(), virial_no, seed,
+                         tune_interval);
+    OverlapChain chain_r(ref_model_.potential.get(), target_model_.potential.get(), virial_no, seed + 1,
+                         tune_interval);
 
     for (int n = 0; n < warmup; n++) {
-        chain_t.step();
-        chain_r.step();
+        chain_t.step(true);
+        chain_r.step(true);
     }
 
     // alpha from short pre-runs via Bennett's criterion
