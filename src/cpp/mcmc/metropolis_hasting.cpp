@@ -181,7 +181,8 @@ double MetropolisHasting::sample_virial(int virial_no, int num_samples, int warm
     return target_model_.virial.at(virial_no);
 }
 
-double MetropolisHasting::sample_virial_overlap(int virial_no, int num_samples, int warmup, int seed) {
+std::vector<std::vector<double>> MetropolisHasting::sample_virial_overlap(int virial_no, int num_samples,
+                                                                          int warmup, int seed) {
 
     // Aim for approx. 100 tuning windows during warmup (min 50, max 200 proposals per window).
     int tune_interval = std::clamp(warmup / 100, 50, 200);
@@ -209,9 +210,18 @@ double MetropolisHasting::sample_virial_overlap(int virial_no, int num_samples, 
         }
     }
 
-    ChainAverages avg = run_chains(chain_t, chain_r, num_samples, alpha);
+    // batch means of the four averages
+    int batch_len = std::max(1, num_samples / 10000);
+    int n_batches = num_samples / batch_len;
+    std::vector<double> batch_sign_t(n_batches), batch_over_t(n_batches);
+    std::vector<double> batch_sign_r(n_batches), batch_over_r(n_batches);
+    for (int b = 0; b < n_batches; b++) {
+        ChainAverages avg = run_chains(chain_t, chain_r, batch_len, alpha);
+        batch_sign_t[b] = avg.sign_t;
+        batch_over_t[b] = avg.over_t;
+        batch_sign_r[b] = avg.sign_r;
+        batch_over_r[b] = avg.over_r;
+    }
 
-    double ratio = (avg.sign_t / avg.over_t) * (avg.over_r / avg.sign_r);
-    target_model_.virial[virial_no] = ref_model_.virial.at(virial_no) * ratio;
-    return target_model_.virial.at(virial_no);
+    return {batch_sign_t, batch_over_t, batch_sign_r, batch_over_r};
 }
