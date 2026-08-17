@@ -4,6 +4,95 @@
 #include <random>
 #include <vector>
 #include <algorithm>
+#include <stdexcept>
+
+namespace {
+
+// Metropolis chain sampling pi = |gamma_own|
+// gamma_other is kept up to date for the overlap function
+class OverlapChain {
+public:
+    OverlapChain(const PairPotential* own, const PairPotential* other, int virial_no, int seed)
+        : own_(own), other_(other), virial_no_(virial_no),
+          n_dof_((virial_no - 1) * 3), rng_(seed), pos_(n_dof_), pos_trial_(n_dof_) {
+        // Chain begins inside the integrand's support; redraw if gamma == 0.
+        for (int attempt = 0; attempt < 1000; attempt++) {
+            for (int i = 0; i < n_dof_; i++) {
+                pos_[i] = 0.3 * normal_(rng_);
+            }
+            gamma_own_ = own_->compute_integrand(pos_.data(), virial_no_);
+            if (std::abs(gamma_own_) > 0.0) break;
+        }
+        if (std::abs(gamma_own_) == 0.0) {
+            throw std::runtime_error("No start configuration with nonzero integrand found");
+        }
+        gamma_other_ = other_->compute_integrand(pos_.data(), virial_no_);
+    }
+
+    void step() {
+        for (int i = 0; i < n_dof_; i++) {
+            pos_trial_[i] = pos_[i] + step_sigma_ * normal_(rng_);
+        }
+        double gamma_new = own_->compute_integrand(pos_trial_.data(), virial_no_);
+        double accept_prob = std::min(1.0, std::abs(gamma_new) / std::abs(gamma_own_));
+        if (uniform_(rng_) < accept_prob) {
+            pos_.swap(pos_trial_);
+            gamma_own_ = gamma_new;
+            gamma_other_ = other_->compute_integrand(pos_.data(), virial_no_);
+        }
+    }
+
+    double gamma_own() const { return gamma_own_; }
+    double gamma_other() const { return gamma_other_; }
+
+private:
+    const PairPotential* own_;
+    const PairPotential* other_;
+    int virial_no_;
+    int n_dof_;
+    std::mt19937 rng_;
+    std::normal_distribution<double> normal_{0.0, 1.0};
+    std::uniform_real_distribution<double> uniform_{0.0, 1.0};
+    std::vector<double> pos_;
+    std::vector<double> pos_trial_;
+    double gamma_own_ = 0.0;
+    double gamma_other_ = 0.0;
+    double step_sigma_ = 1.0;
+};
+
+// Sample means of one measurement run over both chains.
+struct ChainAverages {
+    double sign_t;
+    double over_t;
+    double sign_r;
+    double over_r;
+};
+
+// Bennett overlap function g_OS = |g_t| |g_r| / (alpha |g_r| + |g_t|)
+// (Benjamin, Schultz & Kofke 2007).
+// Runs both chains for n_steps and returns the four sample means:
+// <g_t/pi_T>, <g_OS/pi_T> (chain T) and <g_r/pi_R>, <g_OS/pi_R> (chain R).
+ChainAverages run_chains(OverlapChain& chain_t, OverlapChain& chain_r, int n_steps, double alpha) {
+    double sum_sign_t = 0.0, sum_over_t = 0.0;
+    double sum_sign_r = 0.0, sum_over_r = 0.0;
+    for (int n = 0; n < n_steps; n++) {
+        chain_t.step();
+        double abs_t = std::abs(chain_t.gamma_own());
+        double abs_r = std::abs(chain_t.gamma_other());
+        sum_sign_t += chain_t.gamma_own() / abs_t;
+        sum_over_t += abs_r / (alpha * abs_r + abs_t);
+
+        chain_r.step();
+        abs_r = std::abs(chain_r.gamma_own());
+        abs_t = std::abs(chain_r.gamma_other());
+        sum_sign_r += chain_r.gamma_own() / abs_r;
+        sum_over_r += abs_t / (alpha * abs_r + abs_t);
+    }
+    return {sum_sign_t / n_steps, sum_over_t / n_steps,
+            sum_sign_r / n_steps, sum_over_r / n_steps};
+}
+
+}
 
 
 Model::Model(std::shared_ptr<PairPotential> potential, std::map<int, double> virial)
@@ -70,5 +159,35 @@ double MetropolisHasting::sample_virial(int virial_no, int num_samples, int warm
     }
 
     target_model_.virial[virial_no] = ref_model_.virial.at(virial_no) * sum_ratio / sum_ratio_0;
+    return target_model_.virial.at(virial_no);
+}
+
+double MetropolisHasting::sample_virial_overlap(int virial_no, int num_samples, int warmup, int seed) {
+
+    OverlapChain chain_t(target_model_.potential.get(), ref_model_.potential.get(), virial_no, seed);
+    OverlapChain chain_r(ref_model_.potential.get(), target_model_.potential.get(), virial_no, seed + 1);
+
+    for (int n = 0; n < warmup; n++) {
+        chain_t.step();
+        chain_r.step();
+    }
+
+    // alpha from short pre-runs via Bennett's criterion
+    // (Benjamin, Schultz & Kofke 2007): alpha = <g_OS/pi_R> / <g_OS/pi_T>.
+    // alpha only needs to be roughly right, so the pre-runs are capped.
+    double alpha = 1.0;
+    int n_pre = std::max(1, std::min(num_samples / 20, 50000));
+    for (int it = 0; it < 2; it++) {
+        ChainAverages avg = run_chains(chain_t, chain_r, n_pre, alpha);
+        double alpha_new = avg.over_r / avg.over_t;
+        if (std::isfinite(alpha_new) && alpha_new > 0.0) {
+            alpha = alpha_new;
+        }
+    }
+
+    ChainAverages avg = run_chains(chain_t, chain_r, num_samples, alpha);
+
+    double ratio = (avg.sign_t / avg.over_t) * (avg.over_r / avg.sign_r);
+    target_model_.virial[virial_no] = ref_model_.virial.at(virial_no) * ratio;
     return target_model_.virial.at(virial_no);
 }

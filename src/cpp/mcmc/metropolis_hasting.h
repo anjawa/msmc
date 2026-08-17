@@ -18,6 +18,7 @@ public:
     MetropolisHasting(Model target_model, Model ref_model);
 
     double sample_virial(int virial_no, int num_samples, int warmup, double proposal_sigma, int seed);
+    double sample_virial_overlap(int virial_no, int num_samples, int warmup, int seed);
 private:
     Model target_model_;
     Model ref_model_;

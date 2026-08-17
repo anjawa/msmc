@@ -40,5 +40,7 @@ NB_MODULE(_core, m) {
     nb::class_<MetropolisHasting>(m, "MetropolisHasting")
         .def(nb::init<Model, Model>(), "target_model"_a, "ref_model"_a)
         .def("sample_virial", &MetropolisHasting::sample_virial,
-             "virial_no"_a, "num_samples"_a, "warmup"_a, "proposal_sigma"_a, "seed"_a);
+             "virial_no"_a, "num_samples"_a, "warmup"_a, "proposal_sigma"_a, "seed"_a)
+        .def("sample_virial_overlap", &MetropolisHasting::sample_virial_overlap,
+             "virial_no"_a, "num_samples"_a, "warmup"_a, "seed"_a);
 }
