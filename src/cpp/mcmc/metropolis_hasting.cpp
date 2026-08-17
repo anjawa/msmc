@@ -42,9 +42,13 @@ public:
             pos_.swap(pos_trial_);
             gamma_own_ = gamma_new;
             gamma_other_ = other_->compute_integrand(pos_.data(), virial_no_);
-            n_accepted_++;
+            if (tune) {
+                n_accepted_++;
+            }
         }
-        n_proposed_++;
+        if (tune) {
+            n_proposed_++;
+        }
         if (tune && n_proposed_ == tune_interval_) {
             // Target 30-40 % acceptance.
             double rate = static_cast<double>(n_accepted_) / n_proposed_;
