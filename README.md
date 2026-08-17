@@ -32,7 +32,7 @@ The results were compared with data from:
 > J. A. Barker, P. J. Leonard, and A. Pompe, J. Chem. Phys. 44, 4206 (1966)
 > (as cited in Singh and Kofke)
 
-Overlap sampling, $T^* = 1$, seed 42 ($10^6$ samples for $B_2$/$B_3$, $10^7$ for $B_4$; output of `scripts/msmc_example.py`):
+Overlap sampling, $T^* = 1$, seed 42 (1e6 samples for B2/B3, 1e7 for B4; output of `scripts/msmc_example.py`):
 
 | Virial coefficient | Literature | Implementation |
 |:---|---:|---:|
